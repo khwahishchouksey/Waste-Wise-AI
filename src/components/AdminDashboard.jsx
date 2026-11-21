@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   CheckCircle2, 
@@ -13,22 +13,34 @@ import {
   Building,
   Sparkles
 } from 'lucide-react';
-import { getStoredReports, updateReportStatus } from '../utils/storage';
+import { fetchReports, updateReport } from '../lib/api';
 
 export default function AdminDashboard({ currentUser, onNavigateLogin }) {
-  const [reports, setReports] = useState(getStoredReports());
+  const [reports, setReports] = useState([]);
   const [filterStatus, setFilterStatus] = useState('All');
   const [selectedReport, setSelectedReport] = useState(null);
   const [adminNotes, setAdminNotes] = useState('');
   const [assignedTeam, setAssignedTeam] = useState('Zone Sanitation Crew A');
 
-  const refreshReports = () => {
-    setReports(getStoredReports());
+  const refreshReports = async () => {
+    setReports(await fetchReports());
   };
 
-  const handleStatusChange = (id, newStatus) => {
-    const updated = updateReportStatus(id, newStatus, adminNotes);
-    setReports(updated);
+  // Load reports from Supabase when the dashboard opens (admins receive all reports)
+  useEffect(() => {
+    refreshReports();
+  }, []);
+
+  const handleStatusChange = async (dbId, newStatus) => {
+    const result = await updateReport(dbId, {
+      status: newStatus,
+      ...(adminNotes.trim() ? { adminNotes: adminNotes.trim() } : {}),
+    });
+    if (!result.success) {
+      alert(`Could not update report: ${result.message}`);
+      return;
+    }
+    await refreshReports();
     setSelectedReport(null);
     setAdminNotes('');
   };
@@ -98,7 +110,7 @@ export default function AdminDashboard({ currentUser, onNavigateLogin }) {
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               {isAdmin 
-                ? `${currentUser.roleTitle || 'Sanitation Lead'} • ID: #${currentUser.id} • ${currentUser.department}`
+                ? `${currentUser.roleTitle || 'Sanitation Lead'} • ID: #${currentUser.studentId || 'N/A'} • ${currentUser.department}`
                 : 'Currently active as Student / Guest. For verified dispatch rights and live crew triage, switch to Admin login.'
               }
             </div>
@@ -123,7 +135,7 @@ export default function AdminDashboard({ currentUser, onNavigateLogin }) {
             }}
           >
             <ShieldCheck size={14} />
-            <span>{isAdmin ? 'Switch Admin User' : 'Log In with Admin Passkey'}</span>
+            <span>{isAdmin ? 'Switch Admin User' : 'Log In as Admin'}</span>
           </button>
         )}
       </div>
@@ -328,7 +340,8 @@ export default function AdminDashboard({ currentUser, onNavigateLogin }) {
 
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
-                    onClick={() => handleStatusChange(rpt.id, 'In Progress')}
+                    disabled={!isAdmin}
+                    onClick={() => handleStatusChange(rpt.dbId, 'In Progress')}
                     className="btn-secondary"
                     style={{ flex: 1, padding: '8px', fontSize: '0.78rem', background: rpt.status === 'In Progress' ? 'rgba(59,130,246,0.3)' : undefined }}
                   >
@@ -336,7 +349,8 @@ export default function AdminDashboard({ currentUser, onNavigateLogin }) {
                   </button>
 
                   <button
-                    onClick={() => handleStatusChange(rpt.id, 'Resolved')}
+                    disabled={!isAdmin}
+                    onClick={() => handleStatusChange(rpt.dbId, 'Resolved')}
                     className="btn-primary"
                     style={{ flex: 1, padding: '8px', fontSize: '0.78rem' }}
                   >

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { fetchBadges } from '../lib/api';
 import { 
   BookOpen, 
   Award, 
@@ -33,6 +34,14 @@ const BADGES = [
 export default function EcoHub({ ecoPoints, scanCount }) {
   const [bottlesPerWeek, setBottlesPerWeek] = useState(5);
   const [paperSheetsPerWeek, setPaperSheetsPerWeek] = useState(20);
+    const [unlockedNames, setUnlockedNames] = useState([]);
+
+  // Load this user's unlocked badges (reloads whenever points change)
+  useEffect(() => {
+    fetchBadges().then((list) => setUnlockedNames(list.map((b) => b.name)));
+  }, [ecoPoints]);
+
+  const badges = BADGES.map((b) => ({ ...b, unlocked: unlockedNames.includes(b.title) }));
 
   // Impact Calculator Math
   const annualBottles = bottlesPerWeek * 52;
@@ -157,7 +166,7 @@ export default function EcoHub({ ecoPoints, scanCount }) {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            {BADGES.map((b) => (
+            {badges.map((b) => (
               <div
                 key={b.id}
                 style={{

@@ -19,7 +19,7 @@ import {
   saveUserCorrection,
   WASTE_KNOWLEDGE_BASE 
 } from '../utils/wasteClassifier';
-import { addEcoPoints } from '../utils/storage';
+import { saveScan, saveCorrection } from '../lib/api';
 import confetti from 'canvas-confetti';
 
 export default function WasteScanner({ onScanSuccess }) {
@@ -129,8 +129,15 @@ export default function WasteScanner({ onScanSuccess }) {
           });
         } catch (err) {}
 
-        if (onScanSuccess) {
-          onScanSuccess();
+               // Save to Supabase (the database adds +20 points and +1 scan count)
+        const saved = await saveScan({
+          item: result.itemDetected,
+          category: result.categoryKey,
+          confidence: result.confidence,
+            co2SavedKg: result.co2SavedKg,
+        });
+        if (saved.success && onScanSuccess) {
+          onScanSuccess(saved.user);
         }
       }, 750);
     };
@@ -143,13 +150,12 @@ export default function WasteScanner({ onScanSuccess }) {
   };
 
   // Human-in-the-loop Model Correction & Tutor
-  const handleOverrideCategory = (newCatKey) => {
+  const handleOverrideCategory = async (newCatKey) => {
     if (!scanResult) return;
     const newKb = WASTE_KNOWLEDGE_BASE[newCatKey];
     if (!newKb) return;
 
     saveUserCorrection(scanResult.itemDetected, newCatKey);
-    addEcoPoints(10); // +10 points for calibrating campus AI
 
     const updatedBreakdown = (scanResult.breakdown || []).map(b => ({
       ...b,
@@ -176,8 +182,12 @@ export default function WasteScanner({ onScanSuccess }) {
     setCorrectionNotice(`✓ AI Calibrated! Saved as "${newKb.categoryName.split(' ')[0]}" (+10 Eco-Points awarded).`);
     setTimeout(() => setCorrectionNotice(''), 4500);
 
-    if (onScanSuccess) {
-      onScanSuccess();
+        const saved = await saveCorrection({
+      detectedLabel: scanResult.itemDetected,
+      category: newCatKey,
+    });
+    if (saved.success && onScanSuccess) {
+      onScanSuccess(saved.user);
     }
   };
 

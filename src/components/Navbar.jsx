@@ -314,7 +314,7 @@ export default function Navbar({
                       {currentUser.email}
                     </div>
                     <div style={{ fontSize: '0.72rem', color: currentUser.role === 'admin' ? '#38bdf8' : '#34d399', marginTop: '4px', fontWeight: 600 }}>
-                      ID: {currentUser.id} • {currentUser.role === 'admin' ? 'Admin Authority' : `${currentUser.ecoPoints} Eco-Points`}
+                      ID: {currentUser.studentId || 'N/A'} • {currentUser.role === 'admin' ? 'Admin Authority' : `${currentUser.ecoPoints} Eco-Points`}
                     </div>
                   </div>
 
@@ -413,6 +413,7 @@ export default function Navbar({
           )}
 
           {/* Quick Role Toggle Switcher */}
+          {currentUser?.role === 'admin' && (
           <button
             onClick={toggleRole}
             title="Toggle between Student view and Campus Staff Admin view"
@@ -433,7 +434,7 @@ export default function Navbar({
           >
             <Users size={13} />
             <span>{userRole === 'admin' ? 'Staff Mode' : 'Student Mode'}</span>
-          </button>
+          </button>)}
         </div>
       </div>
     </header>

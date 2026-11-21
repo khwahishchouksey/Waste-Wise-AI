@@ -5,21 +5,28 @@ import ReportIssue from './components/ReportIssue';
 import AdminDashboard from './components/AdminDashboard';
 import EcoHub from './components/EcoHub';
 import LoginPage from './components/LoginPage';
-import { 
-  getEcoPoints, 
-  getScanCount, 
-  incrementScanCount, 
-  getCurrentUser, 
-  logoutUser 
-} from './utils/storage';
+import { getCurrentProfile, signOut } from './lib/api';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(getCurrentUser());
+  const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('scanner');
   const [userRole, setUserRole] = useState(currentUser?.role || 'student');
   const [loginRoleTarget, setLoginRoleTarget] = useState('student');
-  const [ecoPoints, setEcoPoints] = useState(getEcoPoints());
-  const [scanCount, setScanCount] = useState(getScanCount());
+  const [ecoPoints, setEcoPoints] = useState(0);
+  const [scanCount, setScanCount] = useState(0);
+
+    // Restore the Supabase session when the page loads / refreshes
+  useEffect(() => {
+    getCurrentProfile().then((user) => {
+      if (user) {
+        setCurrentUser(user);
+        setUserRole(user.role);
+        setEcoPoints(user.ecoPoints);
+        setScanCount(user.scansCount);
+        setActiveTab(user.role === 'admin' ? 'admin' : 'scanner');
+      }
+    });
+  }, []);
 
   // Synchronize state when user changes
   useEffect(() => {
@@ -34,21 +41,26 @@ export default function App() {
     }
   }, [currentUser]);
 
-  const handleScanSuccess = () => {
-    const updatedCount = incrementScanCount();
-    setScanCount(updatedCount);
-    setEcoPoints(getEcoPoints());
+  const handleScanSuccess = (user) => {
+    if (!user) return;
+    setCurrentUser(user);
+    setEcoPoints(user.ecoPoints);
+    setScanCount(user.scansCount);
   };
 
-  const handleReportSubmitted = () => {
-    setEcoPoints(getEcoPoints());
+   const handleReportSubmitted = async () => {
+    const user = await getCurrentProfile();
+    if (user) {
+      setCurrentUser(user);
+      setEcoPoints(user.ecoPoints);
+    }
   };
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
     setUserRole(user.role);
-    setEcoPoints(user.ecoPoints !== undefined ? user.ecoPoints : getEcoPoints());
-    setScanCount(user.scansCount !== undefined ? user.scansCount : getScanCount());
+    setEcoPoints(user.ecoPoints ?? 0);
+    setScanCount(user.scansCount ?? 0);
     if (user.role === 'admin') {
       setActiveTab('admin');
     } else {
@@ -56,9 +68,12 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
-    logoutUser();
+    const handleLogout = async () => {
+    await signOut();
     setCurrentUser(null);
+    setUserRole('student');
+    setEcoPoints(0);
+    setScanCount(0);
     setLoginRoleTarget('student');
     setActiveTab('login');
   };

@@ -20,12 +20,7 @@ import {
   Compass
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { 
-  DEMO_USERS, 
-  authenticateUser, 
-  registerUser, 
-  setCurrentUser 
-} from '../utils/storage';
+import { signIn, signUp,signUpAdmin, signOut } from '../lib/api';
 
 const STUDENT_DEPARTMENTS = [
   'Computer Science & Environmental Eng.',
@@ -80,6 +75,7 @@ export default function LoginPage({
 
   const handleRoleSwitch = (newRole) => {
     setRole(newRole);
+    setAuthMode('signin');
     setErrorMsg('');
     setSuccessMsg('');
     setIdentifier('');
@@ -92,135 +88,122 @@ export default function LoginPage({
     }
   };
 
-  const handleQuickDemo = (demoUser) => {
-    setErrorMsg('');
-    setIsLoading(true);
-
-    setTimeout(() => {
-      setCurrentUser(demoUser);
-      setIsLoading(false);
-      setSuccessMsg(`Welcome back, ${demoUser.name}! Access granted as ${demoUser.role === 'admin' ? 'Campus Staff Admin' : 'Student'}.`);
-      
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-
-      setTimeout(() => {
-        if (onLoginSuccess) {
-          onLoginSuccess(demoUser);
-        }
-      }, 700);
-    }, 400);
-  };
-
-  const handleSubmit = async (e) => {
+    const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
 
+    const email = identifier.trim();
+    if (!email || !email.includes('@')) {
+      setErrorMsg('Please enter a valid email address.');
+      return;
+    }
+    if (!password) {
+      setErrorMsg('Please enter your password.');
+      return;
+    }
+
+    // ---------- SIGN IN ----------
     if (authMode === 'signin') {
-      if (!identifier.trim()) {
-        setErrorMsg(isStudent ? 'Please enter your Campus Email or Student ID.' : 'Please enter your Staff Email or Admin ID.');
-        return;
-      }
-      if (!password) {
-        setErrorMsg('Please enter your password.');
-        return;
-      }
-
       setIsLoading(true);
-      setTimeout(() => {
-        const result = authenticateUser({
-          identifier,
-          password,
-          role,
-          securityCode
-        });
+      const result = await signIn({ email, password });
 
-        setIsLoading(false);
+      // The tab (Student/Admin) must match the role stored in the database
+      if (result.success && result.user.role !== role) {
+        await signOut();
+        result.success = false;
+        result.message = isStudent
+          ? 'This is a staff account. Please use the Admin tab.'
+          : 'This account does not have admin access.';
+      }
+      setIsLoading(false);
 
-        if (!result.success) {
-          setErrorMsg(result.message);
-        } else {
-          setSuccessMsg(`Authentication successful! Welcome, ${result.user.name}.`);
-          confetti({
-            particleCount: 90,
-            spread: 80,
-            origin: { y: 0.6 }
-          });
-          setTimeout(() => {
-            if (onLoginSuccess) {
-              onLoginSuccess(result.user);
-            }
-          }, 700);
-        }
-      }, 450);
+      if (!result.success) {
+        setErrorMsg(result.message);
+        return;
+      }
+      setSuccessMsg(`Welcome back, ${result.user.name}!`);
+      confetti({ particleCount: 90, spread: 80, origin: { y: 0.6 } });
+      setTimeout(() => onLoginSuccess && onLoginSuccess(result.user), 700);
+      return;
+    }
 
-    } else {
-      // Registration
+    // ---------- ADMIN SIGN UP (with passkey) ----------
+    if (!isStudent) {
       if (!name.trim()) {
         setErrorMsg('Please enter your full name.');
         return;
       }
-      if (!identifier.trim()) {
-        setErrorMsg('Please enter a valid campus email address.');
-        return;
-      }
       if (!customId.trim()) {
-        setErrorMsg(isStudent ? 'Please provide a Student ID (e.g. STU-8899).' : 'Please provide an Employee/Staff ID (e.g. ADM-3011).');
+        setErrorMsg('Please provide your Staff / Employee ID.');
         return;
       }
-      if (!password || password.length < 6) {
+      if (password.length < 6) {
         setErrorMsg('Password must be at least 6 characters.');
         return;
       }
-      if (isStudent && !pledgeAccepted) {
-        setErrorMsg('Please accept the Campus Eco-Segregation Pledge to proceed.');
-        return;
-      }
-      if (!isStudent && securityCode.trim().toUpperCase() !== 'ADMIN2026') {
-        setErrorMsg('Administrative enrollment requires authorization passkey (ADMIN2026).');
+      if (!securityCode.trim()) {
+        setErrorMsg('Please enter the admin passkey.');
         return;
       }
 
       setIsLoading(true);
-      setTimeout(() => {
-        const result = registerUser({
-          name,
-          email: identifier,
-          id: customId,
-          role,
-          department,
-          hostel: isStudent ? hostel : undefined,
-          password,
-          securityCode
-        });
+      const adminResult = await signUpAdmin({
+        name,
+        email,
+        password,
+        staffId: customId,
+        department,
+        passkey: securityCode,
+      });
+      setIsLoading(false);
 
-        setIsLoading(false);
-
-        if (!result.success) {
-          setErrorMsg(result.message);
-        } else {
-          setSuccessMsg(
-            isStudent 
-              ? `Account registered! 🎁 +100 Welcome Eco-Points awarded to ${result.user.name}!` 
-              : `Admin profile authorized for ${result.user.name}. Terminal ready.`
-          );
-          confetti({
-            particleCount: 110,
-            spread: 90,
-            origin: { y: 0.55 }
-          });
-          setTimeout(() => {
-            if (onLoginSuccess) {
-              onLoginSuccess(result.user);
-            }
-          }, 850);
-        }
-      }, 500);
+      if (!adminResult.success) {
+        setErrorMsg(adminResult.message);
+        return;
+      }
+      setSuccessMsg(`Admin access granted. Welcome, ${adminResult.user.name}!`);
+      confetti({ particleCount: 110, spread: 90, origin: { y: 0.55 } });
+      setTimeout(() => onLoginSuccess && onLoginSuccess(adminResult.user), 850);
+      return;
     }
+
+    // ---------- STUDENT SIGN UP ----------
+    if (!name.trim()) {
+      setErrorMsg('Please enter your full name.');
+      return;
+    }
+    if (!customId.trim()) {
+      setErrorMsg('Please provide a Student ID (e.g. STU-8899).');
+      return;
+    }
+    if (password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters.');
+      return;
+    }
+    if (!pledgeAccepted) {
+      setErrorMsg('Please accept the Campus Eco-Segregation Pledge to proceed.');
+      return;
+    }
+
+    setIsLoading(true);
+    const result = await signUp({
+      name,
+      email,
+      password,
+      studentId: customId,
+      department,
+      hostel,
+    });
+    setIsLoading(false);
+
+    if (!result.success) {
+      setErrorMsg(result.message);
+      return;
+    }
+    setSuccessMsg(`Account registered! 🎁 +100 Welcome Eco-Points awarded to ${result.user.name}!`);
+    confetti({ particleCount: 110, spread: 90, origin: { y: 0.55 } });
+    setTimeout(() => onLoginSuccess && onLoginSuccess(result.user), 850);
   };
 
   return (
@@ -506,92 +489,8 @@ export default function LoginPage({
                   transition: 'all 0.2s'
                 }}
               >
-                {isStudent ? 'Join / Sign Up' : 'Request Access'}
+                {isStudent ? 'Join / Sign Up' : 'Admin Sign Up'}
               </button>
-            </div>
-          </div>
-
-          {/* 1-Click Demo Profiles Bar */}
-          <div style={{
-            background: themeBgSubtle,
-            border: `1px dashed ${themeBorder}`,
-            borderRadius: '14px',
-            padding: '12px 16px',
-            marginBottom: '24px'
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '8px'
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                color: themeColor,
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em'
-              }}>
-                <Sparkles size={14} />
-                <span>Instant 1-Click Demo Testing</span>
-              </div>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-                Click any profile to test instantly
-              </span>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              {(isStudent ? DEMO_USERS.students : DEMO_USERS.admins).map((demo) => (
-                <button
-                  key={demo.id}
-                  type="button"
-                  onClick={() => handleQuickDemo(demo)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '8px 12px',
-                    borderRadius: '10px',
-                    background: 'rgba(10, 18, 14, 0.7)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: '#ffffff',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.borderColor = themeColor;
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                  }}
-                >
-                  <img
-                    src={demo.avatar}
-                    alt={demo.name}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '8px',
-                      objectFit: 'cover',
-                      border: `1px solid ${themeBorder}`
-                    }}
-                  />
-                  <div style={{ overflow: 'hidden' }}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                      {demo.name}
-                    </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                      {isStudent ? `${demo.ecoPoints} Pts • ${demo.id}` : `${demo.roleTitle.split(' ')[0]} • ${demo.id}`}
-                    </div>
-                  </div>
-                </button>
-              ))}
             </div>
           </div>
 
@@ -686,7 +585,7 @@ export default function LoginPage({
             <div className="form-group">
               <label className="form-label" style={{ fontSize: '0.8rem' }}>
                 {authMode === 'signin' 
-                  ? (isStudent ? 'Campus Email or Student ID' : 'Official Staff Email or Admin ID')
+                  ? (isStudent ? 'Campus Email' : 'Official Staff Email or Admin ID')
                   : (isStudent ? 'University Email Address' : 'Official Facilities Email')
                 }
               </label>
@@ -701,8 +600,8 @@ export default function LoginPage({
                   className="form-input"
                   placeholder={
                     isStudent 
-                      ? "alex.chen@campus.edu or STU-8821" 
-                      : "a.vance@campus.facilities.edu or ADM-1044"
+                      ? "alex.chen@campus.edu" 
+                      : "a.vance@campus.facilities.edu"
                   }
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
@@ -820,40 +719,22 @@ export default function LoginPage({
                 </button>
               </div>
             </div>
-
-            {/* Admin Security Key (Only for Admin Mode) */}
-            {!isStudent && (
+              {/* Admin Passkey (admin sign-up only) */}
+            {!isStudent && authMode === 'register' && (
               <div className="form-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label className="form-label" style={{ margin: 0, fontSize: '0.8rem' }}>
-                    Security Key / 2FA Passcode {authMode === 'signin' ? '(Optional for Demo)' : '(Required)'}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setSecurityCode('ADMIN2026')}
-                    style={{
-                      background: 'rgba(6, 182, 212, 0.15)',
-                      border: '1px solid rgba(6, 182, 212, 0.3)',
-                      color: '#38bdf8',
-                      fontSize: '0.7rem',
-                      padding: '2px 8px',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Autofill "ADMIN2026"
-                  </button>
-                </div>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>
+                  Admin Passkey (given to you by the campus administrator)
+                </label>
                 <div style={{ position: 'relative' }}>
-                  <KeyRound 
-                    size={17} 
-                    color="var(--text-muted)" 
-                    style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} 
+                  <KeyRound
+                    size={17}
+                    color="var(--text-muted)"
+                    style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }}
                   />
                   <input
-                    type="text"
+                    type="password"
                     className="form-input"
-                    placeholder="Enter clearance code (Default: ADMIN2026)"
+                    placeholder="Enter admin passkey"
                     value={securityCode}
                     onChange={(e) => setSecurityCode(e.target.value)}
                     style={{ paddingLeft: '42px' }}
@@ -986,21 +867,9 @@ export default function LoginPage({
               <HelpCircle size={22} color={themeColor} />
               <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>Campus Account Assistance</h3>
             </div>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '16px' }}>
-              In this university simulation environment, demo accounts are pre-configured for your convenience:
-            </p>
-            <div style={{
-              background: 'rgba(0, 0, 0, 0.4)',
-              padding: '14px',
-              borderRadius: '10px',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              fontSize: '0.82rem',
-              marginBottom: '20px'
-            }}>
-              <div><strong>Default Demo Password:</strong> <code style={{ color: '#34d399' }}>password123</code></div>
-              <div style={{ marginTop: '6px' }}><strong>Admin Security Passkey:</strong> <code style={{ color: '#38bdf8' }}>ADMIN2026</code></div>
-              <div style={{ marginTop: '6px' }}>Or simply tap any of the <strong>1-Click Demo Testing</strong> profile cards on the login screen!</div>
-            </div>
+           <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '20px' }}>
+  Password reset is not available yet. Please contact the campus IT helpdesk or your administrator.
+</p>
             <button
               className="btn-primary"
               style={{ width: '100%', padding: '10px' }}

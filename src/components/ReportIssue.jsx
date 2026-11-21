@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   AlertTriangle, 
   MapPin, 
@@ -12,7 +12,7 @@ import {
   ShieldAlert,
   Sparkles
 } from 'lucide-react';
-import { saveReport, getStoredReports } from '../utils/storage';
+import { createReport, fetchReports } from '../lib/api';
 import confetti from 'canvas-confetti';
 
 const CAMPUS_LOCATIONS = [
@@ -35,7 +35,14 @@ const ISSUE_CATEGORIES = [
 ];
 
 export default function ReportIssue({ onReportSubmitted, currentUser }) {
-  const [reports, setReports] = useState(getStoredReports());
+ const [reports, setReports] = useState([]);
+const [imageFile, setImageFile] = useState(null);
+const [isSubmitting, setIsSubmitting] = useState(false);
+
+// Load reports from Supabase when the page opens
+useEffect(() => {
+  fetchReports().then(setReports);
+}, []);
   const [submittedId, setSubmittedId] = useState(null);
   
   // Form State
@@ -57,6 +64,7 @@ export default function ReportIssue({ onReportSubmitted, currentUser }) {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
+      setImageFile(file);
       setImagePreview(url);
     }
   };
@@ -69,29 +77,39 @@ export default function ReportIssue({ onReportSubmitted, currentUser }) {
     ];
     const picked = samplePhotos[Math.floor(Math.random() * samplePhotos.length)];
     setImagePreview(picked);
+    setImageFile(null);
   };
 
-  const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!currentUser) {
+      alert('Please sign in to submit a report.');
+      return;
+    }
     if (!title || !description) {
       alert("Please provide a title and detailed description of the issue.");
       return;
     }
 
-    const newReport = saveReport({
+    setIsSubmitting(true);
+    const result = await createReport({
       title,
       category,
+      urgency: severity,
       location,
-      severity,
       description,
-      reportedBy,
-      imageUrl: imagePreview || 'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=600&auto=format&fit=crop&q=80'
+      file: imageFile,
     });
+    setIsSubmitting(false);
 
-    setSubmittedId(newReport.id);
-    setReports(getStoredReports());
-    
-    // Confetti & reward notification
+    if (!result.success) {
+      alert(`Could not submit report: ${result.message}`);
+      return;
+    }
+
+    setSubmittedId(result.report.id);
+    setReports(await fetchReports());
+
     try {
       confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
     } catch (err) {}
@@ -100,11 +118,12 @@ export default function ReportIssue({ onReportSubmitted, currentUser }) {
       onReportSubmitted();
     }
 
-    // Reset Form
+    // Reset form
     setTitle('');
     setDescription('');
     setImagePreview(null);
-  };
+    setImageFile(null);
+  };  
 
   return (
     <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 16px' }}>
@@ -304,6 +323,7 @@ export default function ReportIssue({ onReportSubmitted, currentUser }) {
             {/* Submit Button */}
             <button
               type="submit"
+              disabled={isSubmitting}
               className="btn-primary"
               style={{ width: '100%', marginTop: '10px', background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)' }}
             >
